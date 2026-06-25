@@ -1,0 +1,6 @@
+{
+  "name": "Espanhol do Dia a Dia",
+  "description": "Aprenda espanhol sul-americano cotidiano de forma prática com conversação com IA, audição, fala, leitura e controle de erros.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
