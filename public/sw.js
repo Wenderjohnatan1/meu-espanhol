@@ -1,4 +1,5 @@
-const CACHE_NAME = 'hablasur-cache-v3';
+const CACHE_NAME = 'hablasur-cache-v4';
+
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -6,16 +7,20 @@ const ASSETS_TO_CACHE = [
   '/icon-512.jpg'
 ];
 
+// Install Event: cache core assets immediately
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('Pre-caching PWA shell...');
-      return cache.addAll(ASSETS_TO_CACHE);
+      console.log('Pre-caching core app shell...');
+      return cache.addAll(ASSETS_TO_CACHE).catch(err => {
+        console.warn('Pre-caching failed during install (non-blocking):', err);
+      });
     })
   );
   self.skipWaiting();
 });
 
+// Activate Event: clear any old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -32,13 +37,14 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Fetch Event: Network-First with Cache-Fallback Strategy
 self.addEventListener('fetch', (event) => {
   // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
 
-  // 1. Let API, Vite dev tools, hot-reload, and external connections go straight to network
+  // 1. Completely bypass caching for APIs, live reload, hot-module replacement, and external domains
   if (
     url.pathname.startsWith('/api') || 
     url.pathname.includes('/@vite/') || 
@@ -50,59 +56,30 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Production Bundle Assets (/assets/*)
-  // These contain hashed names (e.g. index-ChPzD149.js) so they are immutable and safe to cache long-term.
-  // We use a Cache-First strategy to ensure they load instantly even if offline or session cookies are missing.
-  if (url.pathname.startsWith('/assets/')) {
-    event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(event.request).then((response) => {
-          if (response && response.status === 200) {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-          return response;
-        });
-      })
-    );
-    return;
-  }
-
-  // 3. Network-First with Cache-Fallback Strategy for the app shell, manifest, and static images
+  // 2. Network-First Strategy for all other requests (including HTML, JS, CSS, images)
+  // This guarantees that if the user is online, they ALWAYS get the newest code and assets.
+  // It completely prevents the white-screen bug caused by stale index.html pointing to deleted hashed assets.
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Only cache valid static requests from our own origin
+        // If the response is valid and successful, cache a copy for offline fallback
         if (response && response.status === 200 && response.type === 'basic') {
-          const isStaticAsset = 
-            ASSETS_TO_CACHE.includes(url.pathname) || 
-            url.pathname.endsWith('.jpg') || 
-            url.pathname.endsWith('.png') ||
-            url.pathname.endsWith('.json');
-
-          if (isStaticAsset) {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
         }
         return response;
       })
       .catch(() => {
-        // If fetch fails (offline or unauthenticated standalone launch), serve from Cache
-        return caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
+        // If network is completely offline/failed, retrieve from cache
+        return caches.match(event.request).then((cachedResponse) => {
           if (cachedResponse) {
             return cachedResponse;
           }
-          // If a navigation request fails completely, return cached index.html
+          // If a navigation request fails (fully offline), return the cached index.html
           if (event.request.mode === 'navigate') {
-            return caches.match('/index.html', { ignoreSearch: true });
+            return caches.match('/index.html');
           }
         });
       })
