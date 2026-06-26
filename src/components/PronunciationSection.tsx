@@ -1,17 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Country } from '../types';
 import { phrases, countries } from '../data/phrases';
 import { speakPhrase, createSpeechRecognizer } from '../utils/speech';
 import { Volume2, Mic, CheckCircle, AlertTriangle, ArrowRight, ShieldCheck, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface PronunciationSectionProps {
+  activeDialect: Country;
   onRecordError?: (errorMsg: string) => void;
   onTrackError?: (original: string, corrected: string, exp: string) => void;
 }
 
-export default function PronunciationSection({ onRecordError, onTrackError }: PronunciationSectionProps) {
+export default function PronunciationSection({ activeDialect, onRecordError, onTrackError }: PronunciationSectionProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedCountryFilter, setSelectedCountryFilter] = useState<string>('argentina');
 
   // Interactive training states
   const [isPlaying, setIsPlaying] = useState(false);
@@ -19,9 +20,16 @@ export default function PronunciationSection({ onRecordError, onTrackError }: Pr
   const [userTranscript, setUserTranscript] = useState('');
   const [score, setScore] = useState<number | null>(null);
 
-  // Filter phrases based on selected country
-  const filteredPhrases = phrases.filter(p => p.country === selectedCountryFilter);
+  // Filter phrases based on active dialect
+  const filteredPhrases = phrases.filter(p => p.country === activeDialect);
   const currentPhrase = filteredPhrases[currentIndex] || filteredPhrases[0];
+
+  // Reset progress when activeDialect changes
+  useEffect(() => {
+    setCurrentIndex(0);
+    setUserTranscript('');
+    setScore(null);
+  }, [activeDialect]);
 
   const handleNextPhrase = () => {
     setUserTranscript('');
@@ -34,18 +42,20 @@ export default function PronunciationSection({ onRecordError, onTrackError }: Pr
   };
 
   const handleSpeakPhrase = () => {
+    if (!currentPhrase) return;
     setIsPlaying(true);
-    speakPhrase(currentPhrase.spanish, currentPhrase.country, () => {
+    speakPhrase(currentPhrase.spanish, activeDialect, () => {
       setIsPlaying(false);
     });
   };
 
   const handleStartListening = () => {
+    if (!currentPhrase) return;
     setUserTranscript('');
     setScore(null);
     
     const recognizer = createSpeechRecognizer(
-      currentPhrase.country,
+      activeDialect,
       (result) => {
         setUserTranscript(result);
         calculateScore(result);
@@ -84,6 +94,7 @@ export default function PronunciationSection({ onRecordError, onTrackError }: Pr
   };
 
   const calculateScore = (transcript: string) => {
+    if (!currentPhrase) return;
     const user = cleanText(transcript);
     const target = cleanText(currentPhrase.spanish);
 
@@ -110,45 +121,24 @@ export default function PronunciationSection({ onRecordError, onTrackError }: Pr
       onTrackError(
         transcript || "[Sua fala não foi compreendida]",
         currentPhrase.spanish,
-        `Você tentou pronunciar a frase em sotaque ${currentPhrase.country.toUpperCase()}: "${currentPhrase.spanish}". Pronunciou: "${transcript || "..."}".`
+        `Você tentou pronunciar a frase em espanhol: "${currentPhrase.spanish}". Pronunciou: "${transcript || "..."}".`
       );
     }
   };
 
-  const handleCountryFilterChange = (countryId: string) => {
-    setSelectedCountryFilter(countryId);
-    setCurrentIndex(0);
-    setUserTranscript('');
-    setScore(null);
-  };
-
-  const currentCountryInfo = countries.find(c => c.id === selectedCountryFilter) || countries[0];
+  const currentCountryInfo = countries.find(c => c.id === activeDialect) || countries[0];
 
   return (
     <div className="flex flex-col gap-6 max-w-md mx-auto pb-10">
       
-      {/* Sotaque Selector */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-xs">
-        <h3 className="text-sm font-semibold text-gray-500 mb-3 flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" /> Praticar Pronúncia & Escuta:
+      {/* Sotaque Header */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-3xs">
+        <h3 className="text-xs font-bold text-gray-500 flex items-center gap-2 uppercase tracking-wide">
+          <ShieldCheck className="w-4 h-4 text-emerald-600" /> Treinar Pronúncia em Espanhol ({currentCountryInfo.flag})
         </h3>
-        <div className="flex gap-2 justify-between">
-          {countries.map(c => (
-            <button
-              id={`pron-country-btn-${c.id}`}
-              key={c.id}
-              onClick={() => handleCountryFilterChange(c.id)}
-              className={`flex-1 flex flex-col items-center py-2.5 rounded-xl border text-xs font-semibold transition-all ${
-                selectedCountryFilter === c.id
-                  ? 'border-emerald-600 bg-emerald-50 text-emerald-950'
-                  : 'border-gray-100 bg-gray-50/50 text-gray-500 hover:bg-gray-100'
-              }`}
-            >
-              <span className="text-xl mb-1">{c.flag}</span>
-              <span>{c.name}</span>
-            </button>
-          ))}
-        </div>
+        <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed font-medium">
+          Diga as frases em voz alta e veja se sua pronúncia se aproxima do sotaque nativo da {currentCountryInfo.name}!
+        </p>
       </div>
 
       {/* Main Pronunciation Card */}
@@ -158,18 +148,18 @@ export default function PronunciationSection({ onRecordError, onTrackError }: Pr
           {/* Progress Indicator */}
           <div className="flex justify-between items-center text-xs font-semibold text-gray-400">
             <span>FRASE {currentIndex + 1} DE {filteredPhrases.length}</span>
-            <span className="text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full uppercase tracking-wider text-[10px]">
-              Sotaque {currentCountryInfo.accent}
+            <span className="text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full uppercase tracking-wider text-[10px] font-bold">
+              {currentCountryInfo.accent}
             </span>
           </div>
 
           {/* Large display phrase */}
           <div className="text-center py-4">
-            <h2 className="text-2xl font-bold text-slate-900 tracking-tight leading-relaxed font-sans">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight leading-relaxed font-sans">
               "{currentPhrase.spanish}"
             </h2>
-            <p className="text-sm text-gray-400 italic mt-2">
-              Tradução: {currentPhrase.translation}
+            <p className="text-sm text-gray-400 italic mt-2 font-medium">
+              Tradução: "{currentPhrase.translation}"
             </p>
           </div>
 
@@ -182,14 +172,14 @@ export default function PronunciationSection({ onRecordError, onTrackError }: Pr
               <button
                 id="pron-speak-btn"
                 onClick={handleSpeakPhrase}
-                className={`flex-1 py-3 px-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+                className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
                   isPlaying 
                     ? 'bg-indigo-100 text-indigo-800' 
                     : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs'
                 }`}
               >
                 <Volume2 className={`w-4 h-4 ${isPlaying ? 'animate-bounce' : ''}`} />
-                <span>{isPlaying ? 'Reproduzindo Áudio...' : 'Ouça o Sotaque Nativo'}</span>
+                <span>{isPlaying ? 'Reproduzindo Áudio...' : 'Ouça a Guia Nativa'}</span>
               </button>
             </div>
 
@@ -199,7 +189,7 @@ export default function PronunciationSection({ onRecordError, onTrackError }: Pr
               <button
                 id="pron-record-btn"
                 onClick={handleStartListening}
-                className={`flex-1 py-3 px-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+                className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
                   isListening 
                     ? 'bg-red-200 text-red-900 animate-pulse' 
                     : 'bg-red-50 text-red-700 hover:bg-red-100'
@@ -234,15 +224,15 @@ export default function PronunciationSection({ onRecordError, onTrackError }: Pr
                   )}
                 </div>
 
-                <p className="text-xs text-gray-500 mb-1">Você falou:</p>
-                <p className="font-semibold italic text-sm mb-3">"{userTranscript}"</p>
+                <p className="text-xs text-gray-500 mb-1 font-medium">Você falou:</p>
+                <p className="font-bold italic text-sm mb-3">"{userTranscript}"</p>
 
                 {score !== null && score >= 85 ? (
                   <div className="flex items-start gap-2 text-xs text-emerald-800 font-medium">
                     <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
                     <div>
                       <span className="font-bold block">¡Excelente pronunciación!</span>
-                      Você dominou a cadência e gíria do sotaque {currentCountryInfo.accent}.
+                      Você dominou o sotaque e as gírias do sotaque {currentCountryInfo.accent}.
                     </div>
                   </div>
                 ) : (
@@ -250,7 +240,7 @@ export default function PronunciationSection({ onRecordError, onTrackError }: Pr
                     <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
                     <div>
                       <span className="font-bold block">Foco no Sotaque!</span>
-                      Você cometeu alguns erros de ritmo. Essa tentativa foi salva na aba "Erros" automaticamente para que você possa revisar quando quiser!
+                      Essa tentativa foi guardada no seu histórico de erros automaticamente para que você possa revisar quando quiser!
                     </div>
                   </div>
                 )}
@@ -279,7 +269,7 @@ export default function PronunciationSection({ onRecordError, onTrackError }: Pr
         </div>
       ) : (
         <div className="text-center text-gray-400 py-10 font-sans font-medium">
-          Nenhuma frase encontrada para esta categoria.
+          Nenhuma frase encontrada para o sotaque selecionado.
         </div>
       )}
 

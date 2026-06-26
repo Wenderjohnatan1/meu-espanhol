@@ -1,4 +1,4 @@
-export type Country = 'argentina' | 'colombia' | 'chile' | 'peru';
+export type Country = 'colombia' | 'mexico';
 
 export interface CountryInfo {
   id: Country;
@@ -63,3 +63,26 @@ export interface UserError {
   timestamp: string;
   reviewed: boolean;
 }
+
+export interface SRSCard {
+  id: string;
+  spanish: string;
+  translation: string;
+  explanation: string;
+  dialect: Country;
+  intervalMinutes: number;
+  easeFactor: number;
+  nextReviewDate: string; // ISO date string
+  box: number; // SRS box / level
+  addedAt: string; // ISO date string
+}
+
+export interface UserAccount {
+  username: string;
+  name: string;
+  avatarUrl: string;
+  xp: number;
+  streak: number;
+  lastActive: string; // YYYY-MM-DD
+}
+

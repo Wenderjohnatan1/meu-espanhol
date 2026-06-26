@@ -1,18 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { colombianConversations, ColombianConversation, ConversationTurn } from '../data/colombianConversations';
+import { conversations, Conversation, ConversationTurn } from '../data/conversations';
 import { speakPhrase, createSpeechRecognizer } from '../utils/speech';
 import { 
   BookOpen, Volume2, Mic, Eye, Check, RefreshCw, ChevronRight, 
-  ArrowLeft, Compass, Award, Star, MessageSquare, AlertCircle, Info, Flame 
+  ArrowLeft, Compass, Award, Star, MessageSquare, AlertCircle, Info, Flame, Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Country } from '../types';
 
-interface ColombianDialogueTrainerProps {
+interface DialogueTrainerProps {
+  activeDialect: Country;
   onTrackError?: (original: string, corrected: string, explanation: string) => void;
+  onSavePhraseToSRS?: (spanish: string, translation: string, explanation: string, category: string) => void;
 }
 
-export default function ColombianDialogueTrainer({ onTrackError }: ColombianDialogueTrainerProps) {
-  const [selectedConversation, setSelectedConversation] = useState<ColombianConversation | null>(null);
+export default function DialogueTrainer({ activeDialect, onTrackError, onSavePhraseToSRS }: DialogueTrainerProps) {
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [currentTurnIndex, setCurrentTurnIndex] = useState<number>(0);
   const [revealedTranslations, setRevealedTranslations] = useState<Record<string, boolean>>({});
   const [filterCategory, setFilterCategory] = useState<string>('todos');
@@ -24,6 +27,7 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
   const [feedbackMessage, setFeedbackMessage] = useState<string>('');
   const [micError, setMicError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState<string | null>(null); // tracks active TTS playing turn ID
+  const [savedTurns, setSavedTurns] = useState<Record<string, boolean>>({});
 
   // Conversation history for the chat-like bubble flow
   const [chatHistory, setChatHistory] = useState<ConversationTurn[]>([]);
@@ -36,8 +40,14 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
     }
   }, [chatHistory, currentTurnIndex]);
 
+  // Reset selection when dialect changes
+  useEffect(() => {
+    setSelectedConversation(null);
+    setChatHistory([]);
+  }, [activeDialect]);
+
   // Load conversation progress / initialize
-  const handleSelectConversation = (conv: ColombianConversation) => {
+  const handleSelectConversation = (conv: Conversation) => {
     setSelectedConversation(conv);
     setCurrentTurnIndex(0);
     setRevealedTranslations({});
@@ -45,6 +55,7 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
     setMatchScore(null);
     setFeedbackMessage('');
     setMicError(null);
+    setSavedTurns({});
     // Initialize history with the first message
     setChatHistory([conv.turns[0]]);
   };
@@ -63,7 +74,7 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
 
   const handleSpeakText = (text: string, turnId: string) => {
     setIsPlaying(turnId);
-    speakPhrase(text, 'colombia', () => {
+    speakPhrase(text, activeDialect, () => {
       setIsPlaying(null);
     });
   };
@@ -76,7 +87,7 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
     setMicError(null);
 
     const recognizer = createSpeechRecognizer(
-      'colombia',
+      activeDialect,
       (result) => {
         setUserTranscript(result);
         evaluateSpeech(result, targetText, turn);
@@ -119,9 +130,16 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
     const user = cleanText(userText);
     const target = cleanText(targetText);
 
+    const isCol = activeDialect === 'colombia';
+    const characterName = isCol ? 'Valentina' : 'Ximena';
+
     if (user === target) {
       setMatchScore(100);
-      setFeedbackMessage("¡Espectacular, parce! Pronúncia 100% idêntica e ritmo impecável.");
+      setFeedbackMessage(
+        isCol 
+          ? "¡Espectacular, parce! Pronúncia 100% idêntica e ritmo impecável."
+          : "¡Órale, qué chido! Pronúncia impecável e sotaque super chilango."
+      );
       return;
     }
 
@@ -137,24 +155,36 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
     setMatchScore(score);
 
     if (score >= 80) {
-      setFeedbackMessage("¡Qué berraquera! Excelente pronúncia. Valentina te entendeu perfeitamente!");
+      setFeedbackMessage(
+        isCol
+          ? `¡Qué berraquera! Excelente pronúncia. ${characterName} te entendeu perfeitamente!`
+          : `¡No manches, qué chido! Excelente pronúncia. ${characterName} te entendeu perfeitamente!`
+      );
     } else if (score >= 50) {
-      setFeedbackMessage("¡Muy bien! Te entenderam, mas que tal treinar mais um pouco para polir os fonemas colombianos?");
+      setFeedbackMessage(
+        isCol
+          ? `¡Muy bien! Te entenderam, mas que tal polir os fonemas colombianos?`
+          : `¡Ahí la llevas! Te entenderam, mas que tal treinar mais para pegar o sotaque mexicano?`
+      );
       // Automatically register to error list if score is mediocre
       if (onTrackError) {
         onTrackError(
           userText || "Pronúncia parcial",
           targetText,
-          `Pronúncia colombiana parcial (${score}%) no diálogo "${selectedConversation?.title}".`
+          `Pronúncia parcial (${score}%) no diálogo "${selectedConversation?.title}" (${activeDialect === 'colombia' ? 'Colômbia' : 'México'}).`
         );
       }
     } else {
-      setFeedbackMessage("¡Qué pena! Não compreendi bem. Clique em 'Ouvir' acima para pegar o ritmo e tente de novo!");
+      setFeedbackMessage(
+        isCol
+          ? "¡Qué pena! Não compreendi bem. Clique em 'Ouvir' acima para pegar o ritmo e tente de novo!"
+          : "¡Qué onda! Não captei bem. Clique em 'Ouvir' acima para imitar a entonação e tente de novo!"
+      );
       if (onTrackError) {
         onTrackError(
           userText || "Silêncio ou ruído",
           targetText,
-          `Sintonia baixa de pronúncia (${score}%) no diálogo "${selectedConversation?.title}".`
+          `Sintonia baixa de pronúncia (${score}%) no diálogo "${selectedConversation?.title}" (${activeDialect === 'colombia' ? 'Colômbia' : 'México'}).`
         );
       }
     }
@@ -178,24 +208,40 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
     }
   };
 
-  // Filter conversations
-  const categories = ['todos', 'Hotel', 'Flerte', 'Restaurante', 'Táxi', 'Balada'];
-  const filteredConversations = colombianConversations.filter(c => 
-    filterCategory === 'todos' || c.category.toLowerCase() === filterCategory.toLowerCase()
+  const handleSaveToSRS = (turn: ConversationTurn) => {
+    if (onSavePhraseToSRS) {
+      const isCol = activeDialect === 'colombia';
+      const cat = selectedConversation?.category || 'Diálogos';
+      const explanation = turn.slangTip || `Expressão útil do dia a dia no sotaque ${isCol ? 'colombiano' : 'mexicano'}.`;
+      
+      onSavePhraseToSRS(turn.spanish, turn.translation, explanation, cat);
+      setSavedTurns(prev => ({ ...prev, [turn.id]: true }));
+    }
+  };
+
+  // Filter conversations by active dialect and category
+  const categories = ['todos', 'Hotel', 'Flerte', 'Restaurante', 'Táxi', 'Balada', 'Cotidiano'];
+  const filteredConversations = conversations.filter(c => 
+    c.dialect === activeDialect &&
+    (filterCategory === 'todos' || c.category.toLowerCase() === filterCategory.toLowerCase())
   );
+
+  const isCol = activeDialect === 'colombia';
+  const characterName = isCol ? 'Valentina' : 'Ximena';
+  const flag = isCol ? '🇨🇴' : '🇲🇽';
 
   return (
     <div className="flex flex-col gap-4">
       
       {!selectedConversation ? (
-        // List of 20 Colombian conversations
+        // List of conversations
         <div className="flex flex-col gap-4">
           <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-2xs">
             <h3 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
-              <Compass className="text-indigo-600 w-4 h-4" /> Laboratório de Diálogos da Valentina
+              <Compass className="text-indigo-600 w-4 h-4" /> Laboratório de Diálogos da {characterName} {flag}
             </h3>
             <p className="text-xs text-gray-400 font-medium mt-1 leading-relaxed">
-              Pratique conversação ativa no espanhol real da Colômbia. Escolha uma das 20 situações cotidianas de Medellín, Bogotá e Cali para treinar!
+              Pratique conversação ativa no espanhol real do {isCol ? 'dia a dia da Colômbia (Medellín, Bogotá)' : 'cotidiano do México (CDMX, Guadalajara)'}. Escolha uma das 15 situações temáticas para treinar!
             </p>
             
             {/* Category Filter Pills */}
@@ -234,7 +280,8 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
                     conv.category === 'Flerte' ? 'bg-pink-50 text-pink-700 border border-pink-100' :
                     conv.category === 'Restaurante' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
                     conv.category === 'Táxi' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                    'bg-purple-50 text-purple-700 border border-purple-100'
+                    conv.category === 'Balada' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
+                    'bg-slate-100 text-slate-700 border border-slate-200'
                   }`}>
                     {conv.category}
                   </span>
@@ -260,6 +307,11 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
                 </div>
               </div>
             ))}
+            {filteredConversations.length === 0 && (
+              <div className="text-center py-8 bg-white border border-gray-100 rounded-2xl">
+                <p className="text-xs text-gray-400 font-medium">Nenhum diálogo disponível nesta categoria.</p>
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -277,7 +329,7 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
             </button>
             <div className="text-center">
               <span className="text-[10px] font-bold uppercase text-indigo-600 tracking-wider">
-                Sotaque Colombiano ({selectedConversation.location})
+                Sotaque {isCol ? 'Colombiano' : 'Mexicano'} ({selectedConversation.location})
               </span>
               <h4 className="font-bold text-gray-900 text-xs">
                 {selectedConversation.title}
@@ -301,7 +353,7 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
                 {chatHistory.slice(0, -1).map((histTurn) => (
                   <div
                     key={histTurn.id}
-                    className={`flex flex-col max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
+                    className={`flex flex-col max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed relative ${
                       histTurn.isUserTurn
                         ? 'bg-indigo-600 text-white self-end rounded-br-none'
                         : 'bg-gray-100 text-gray-800 self-start rounded-bl-none'
@@ -318,6 +370,16 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
                     }`}>
                       {histTurn.translation}
                     </p>
+                    
+                    {/* Tiny save phrase action */}
+                    <button
+                      onClick={() => handleSaveToSRS(histTurn)}
+                      disabled={savedTurns[histTurn.id]}
+                      className={`absolute -bottom-2 ${histTurn.isUserTurn ? '-left-2' : '-right-2'} bg-white p-1 rounded-full border shadow-3xs text-gray-400 hover:text-indigo-600 transition-colors cursor-pointer`}
+                      title="Salvar na Memorização"
+                    >
+                      <Save className={`w-3 h-3 ${savedTurns[histTurn.id] ? 'text-emerald-500 fill-emerald-500' : ''}`} />
+                    </button>
                   </div>
                 ))}
                 <div ref={chatEndRef} />
@@ -328,6 +390,7 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
                 {(() => {
                   const activeTurn = selectedConversation.turns[currentTurnIndex];
                   const hasRevealed = revealedTranslations[activeTurn.id];
+                  const isSaved = savedTurns[activeTurn.id];
 
                   return (
                     <div className="flex flex-col gap-3">
@@ -342,7 +405,7 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
                           {activeTurn.isUserTurn ? '👉 Seu Turno (Fale esta resposta)' : `🗣️ Turno de ${activeTurn.speaker}`}
                         </span>
 
-                        <div className="flex gap-1.5">
+                        <div className="flex gap-1.5 items-center">
                           <button
                             id={`speak-active-turn-${activeTurn.id}`}
                             onClick={() => handleSpeakText(activeTurn.spanish, activeTurn.id)}
@@ -368,6 +431,20 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
                           >
                             <Eye className="w-3.5 h-3.5" />
                             <span>{hasRevealed ? 'Ocultar' : 'Espiar'}</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleSaveToSRS(activeTurn)}
+                            disabled={isSaved}
+                            className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 transition-all ${
+                              isSaved
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                : 'bg-gray-50 border-gray-150 text-gray-600 hover:bg-gray-100'
+                            }`}
+                            title="Memorizar esta frase"
+                          >
+                            <Save className={`w-3.5 h-3.5 ${isSaved ? 'fill-emerald-500 text-emerald-500' : ''}`} />
+                            <span>{isSaved ? 'Salvo' : 'Memorizar'}</span>
                           </button>
                         </div>
                       </div>
@@ -396,7 +473,7 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
                               </p>
                               {activeTurn.slangTip && (
                                 <div className="mt-2 p-2 bg-amber-50 rounded-lg text-[11px] text-amber-900 font-medium leading-relaxed border border-amber-100/30">
-                                  💡 <strong>Dica da Valentina:</strong> {activeTurn.slangTip}
+                                  💡 <strong>Dica de Sotaque:</strong> {activeTurn.slangTip}
                                 </div>
                               )}
                             </motion.div>
@@ -502,7 +579,7 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
                           onClick={handleNextTurn}
                           className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm"
                         >
-                          <span>Entendi e Ouvir Valentina</span>
+                          <span>Entendi e Ouvir {characterName}</span>
                           <ChevronRight className="w-4 h-4" />
                         </button>
                       )}
@@ -524,12 +601,14 @@ export default function ColombianDialogueTrainer({ onTrackError }: ColombianDial
               </div>
 
               <div>
-                <h3 className="font-black text-gray-900 text-lg">¡Felicitaciones, parcero!</h3>
+                <h3 className="font-black text-gray-900 text-lg">
+                  {isCol ? '¡Felicitaciones, parcero!' : '¡Eso es todo, carnal!'}
+                </h3>
                 <p className="text-xs text-indigo-600 font-bold uppercase tracking-wider mt-0.5">
                   Diálogo Concluído com Sucesso!
                 </p>
                 <p className="text-xs text-gray-500 font-medium max-w-xs leading-relaxed mt-2">
-                  Você completou o treino de conversação <strong>"{selectedConversation.title}"</strong> de ponta a ponta. Sua fluência colombiana agradece!
+                  Você completou o treino de conversação <strong>"{selectedConversation.title}"</strong> de ponta a ponta. Sua fluência no sotaque {isCol ? 'colombiano' : 'mexicano'} agradece!
                 </p>
               </div>
 

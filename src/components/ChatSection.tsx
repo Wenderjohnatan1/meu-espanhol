@@ -6,15 +6,16 @@ import { Send, Mic, Volume2, Sparkles, AlertCircle, BookOpen, User, RefreshCw, E
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ChatSectionProps {
+  activeDialect: Country;
   onRecordError?: (errorMsg: string) => void;
   onTrackError?: (original: string, corrected: string, exp: string) => void;
   trackedErrors: UserError[];
 }
 
-export default function ChatSection({ onRecordError, onTrackError, trackedErrors }: ChatSectionProps) {
-  const [selectedCountry, setSelectedCountry] = useState<Country>('argentina');
+export default function ChatSection({ activeDialect, onRecordError, onTrackError, trackedErrors }: ChatSectionProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
+  const [resetKey, setResetKey] = useState(0);
   
   // Voice & synth states
   const [isListening, setIsListening] = useState(false);
@@ -23,21 +24,17 @@ export default function ChatSection({ onRecordError, onTrackError, trackedErrors
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize with a welcome message when country changes
+  const activeCharacter = countries.find(c => c.id === activeDialect) || countries[0];
+
+  // Initialize with a welcome message when country or resetKey changes
   useEffect(() => {
-    const selectedChar = countries.find(c => c.id === selectedCountry);
-    const name = selectedChar?.defaultCharacter || 'Santi';
-    const flag = selectedChar?.flag || '🇦🇷';
-    
+    const name = activeCharacter.defaultCharacter;
     let welcomeText = '';
-    if (selectedCountry === 'argentina') {
-      welcomeText = `¡Che! ¿Cómo andás? Soy ${name}. Qué bueno tenerte por acá. ¿De qué querés charlar hoy, pibe?`;
-    } else if (selectedCountry === 'colombia') {
+    
+    if (activeDialect === 'colombia') {
       welcomeText = `¡Hola parce! Soy ${name}. Qué alegría saludarte hoy. ¿Qué más, cómo va todo en tu día?`;
-    } else if (selectedCountry === 'chile') {
-      welcomeText = `¡Hola, po! ¿Cómo estai? Soy ${name}. Qué buena onda poder parlar un rato contigo. ¿De qué vamos a cachar hoy?`;
     } else {
-      welcomeText = `¿Qué tal, causa? Soy ${name}. ¿Cómo va la vida? Vamos a conversar un rato tranqui, ¿te parece?`;
+      welcomeText = `¡Qué onda, güey! Soy ${name}. Qué chido platicar contigo hoy. ¿De qué vamos a platicar, carnal?`;
     }
 
     setMessages([
@@ -46,17 +43,17 @@ export default function ChatSection({ onRecordError, onTrackError, trackedErrors
         role: 'model',
         text: welcomeText,
         timestamp: new Date(),
-        localSlangTip: "Para começar, mande uma saudação simples como 'Hola' ou diga seu nome!"
+        localSlangTip: activeDialect === 'colombia' 
+          ? "Para começar, mande um 'Hola Valentina, todo bien?'" 
+          : "Para começar, mande um 'Hola Ximena, ¿cómo estás, güey?'"
       }
     ]);
-  }, [selectedCountry]);
+  }, [activeDialect, resetKey]);
 
   // Scroll to bottom whenever messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isAiTyping]);
-
-  const activeCharacter = countries.find(c => c.id === selectedCountry) || countries[0];
 
   const handleSendMessage = async (textToSend?: string) => {
     const text = textToSend || inputText.trim();
@@ -87,7 +84,7 @@ export default function ChatSection({ onRecordError, onTrackError, trackedErrors
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: chatHistory,
-          country: selectedCountry,
+          country: activeDialect,
           characterName: activeCharacter.defaultCharacter
         })
       });
@@ -121,7 +118,9 @@ export default function ChatSection({ onRecordError, onTrackError, trackedErrors
       const errorMessage: ChatMessage = {
         id: `err-${Date.now()}`,
         role: 'model',
-        text: "¡Che, qué mala suerte! No logré conectarme con mi IA para responderte. ¿Reintentamos?",
+        text: activeDialect === 'colombia' 
+          ? "¡Qué pena, parce! Não consegui me conectar ao servidor. Vamos tentar de novo?"
+          : "¡Qué onda, carnal! Tive um probleminha de conexão ao servidor. Vamos tentar de novo?",
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -132,7 +131,7 @@ export default function ChatSection({ onRecordError, onTrackError, trackedErrors
 
   const handleStartListening = () => {
     const recognizer = createSpeechRecognizer(
-      selectedCountry,
+      activeDialect,
       (result) => {
         setInputText(result);
       },
@@ -164,14 +163,14 @@ export default function ChatSection({ onRecordError, onTrackError, trackedErrors
 
   const handleSpeakText = (msgId: string, text: string) => {
     setSpeakingId(msgId);
-    speakPhrase(text, selectedCountry, () => {
+    speakPhrase(text, activeDialect, () => {
       setSpeakingId(null);
     });
   };
 
   const handleResetChat = () => {
     if (confirm("Quer reiniciar nossa conversa do zero?")) {
-      setSelectedCountry(selectedCountry); // triggers useEffect to reset
+      setResetKey(prev => prev + 1);
     }
   };
 
@@ -193,26 +192,14 @@ export default function ChatSection({ onRecordError, onTrackError, trackedErrors
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <select
-            id="chat-country-select"
-            value={selectedCountry}
-            onChange={(e) => setSelectedCountry(e.target.value as Country)}
-            className="text-xs bg-gray-50 border border-gray-100 font-semibold text-gray-700 px-2 py-1.5 rounded-lg outline-hidden focus:border-indigo-500 cursor-pointer"
-          >
-            {countries.map(c => (
-              <option key={c.id} value={c.id}>{c.flag} {c.name}</option>
-            ))}
-          </select>
-          <button
-            id="chat-reset-btn"
-            onClick={handleResetChat}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
-            title="Reiniciar chat"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          id="chat-reset-btn"
+          onClick={handleResetChat}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
+          title="Reiniciar chat"
+        >
+          <RefreshCw className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Chat Messages Panel */}

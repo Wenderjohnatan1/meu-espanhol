@@ -26,12 +26,10 @@ export const speakPhrase = (text: string, country: string, onEnd?: () => void) =
   // Try to find a fitting Spanish voice
   const voices = window.speechSynthesis.getVoices();
   
-  // Locale mappings for South American accents
+  // Locale mappings for accents
   const countryLocales: Record<string, string[]> = {
-    argentina: ['es-AR', 'es-UY', 'es-CL', 'es-MX', 'es'],
     colombia: ['es-CO', 'es-VE', 'es-MX', 'es'],
-    chile: ['es-CL', 'es-AR', 'es-MX', 'es'],
-    peru: ['es-PE', 'es-CO', 'es-MX', 'es']
+    mexico: ['es-MX', 'es-US', 'es']
   };
 
   const targets = countryLocales[country.toLowerCase()] || ['es-MX', 'es-ES', 'es'];
@@ -175,13 +173,11 @@ export const createSpeechRecognizer = (
 
   // Set local language code
   const countryLocales: Record<string, string> = {
-    argentina: 'es-AR',
     colombia: 'es-CO',
-    chile: 'es-CL',
-    peru: 'es-PE'
+    mexico: 'es-MX'
   };
   
-  recognition.lang = countryLocales[country.toLowerCase()] || 'es-AR';
+  recognition.lang = countryLocales[country.toLowerCase()] || 'es-CO';
 
   recognition.onresult = (event: any) => {
     const result = event.results[event.results.length - 1];

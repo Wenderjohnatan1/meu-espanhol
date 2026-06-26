@@ -10,9 +10,10 @@ interface PhraseCardProps {
   flag: string;
   onRecordError?: (errorMsg: string) => void;
   onTrackError?: (original: string, corrected: string, exp: string) => void;
+  onInteract?: (phraseId: string) => void;
 }
 
-export default function PhraseCard({ phrase, flag, onRecordError, onTrackError }: PhraseCardProps) {
+export default function PhraseCard({ phrase, flag, onRecordError, onTrackError, onInteract }: PhraseCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSpying, setIsSpying] = useState(false);
   
@@ -23,6 +24,7 @@ export default function PhraseCard({ phrase, flag, onRecordError, onTrackError }
 
   const handleSpeak = () => {
     setIsPlaying(true);
+    onInteract?.(phrase.id);
     speakPhrase(phrase.spanish, phrase.country, () => {
       setIsPlaying(false);
     });
@@ -31,6 +33,7 @@ export default function PhraseCard({ phrase, flag, onRecordError, onTrackError }
   const handleStartListening = () => {
     setUserTranscript('');
     setMatchScore(null);
+    onInteract?.(phrase.id);
     
     const recognizer = createSpeechRecognizer(
       phrase.country,
@@ -156,7 +159,13 @@ export default function PhraseCard({ phrase, flag, onRecordError, onTrackError }
         {/* Peek Button (Espiar) */}
         <button
           id={`spy-btn-${phrase.id}`}
-          onClick={() => setIsSpying(!isSpying)}
+          onClick={() => {
+            const nextSpy = !isSpying;
+            setIsSpying(nextSpy);
+            if (nextSpy) {
+              onInteract?.(phrase.id);
+            }
+          }}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-colors ml-auto ${
             isSpying 
               ? 'bg-indigo-100 text-indigo-800' 
