@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hablasur-cache-v2';
+const CACHE_NAME = 'hablasur-cache-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -9,6 +9,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
+      console.log('Pre-caching PWA shell...');
       return cache.addAll(ASSETS_TO_CACHE);
     })
   );
@@ -37,7 +38,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
-  // Let API, Vite dev tools, hot-reload, and external connections go straight to network
+  // 1. Let API, Vite dev tools, hot-reload, and external connections go straight to network
   if (
     url.pathname.startsWith('/api') || 
     url.pathname.includes('/@vite/') || 
@@ -49,34 +50,42 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // CRITICAL: Never cache dynamically imported scripts or stylesheets in development/preview.
-  // This completely prevents the "Failed to fetch dynamically imported module" white-screen bug!
-  const isCodeAsset = 
-    url.pathname.endsWith('.js') || 
-    url.pathname.endsWith('.ts') || 
-    url.pathname.endsWith('.tsx') || 
-    url.pathname.endsWith('.css');
-
-  if (isCodeAsset) {
-    // Serve directly from network without caching
+  // 2. Production Bundle Assets (/assets/*)
+  // These contain hashed names (e.g. index-ChPzD149.js) so they are immutable and safe to cache long-term.
+  // We use a Cache-First strategy to ensure they load instantly even if offline or session cookies are missing.
+  if (url.pathname.startsWith('/assets/')) {
     event.respondWith(
-      fetch(event.request).catch(() => {
-        // Fallback to cached version only if it exists in the pre-cached list
-        return caches.match(event.request);
+      caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        return fetch(event.request).then((response) => {
+          if (response && response.status === 200) {
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return response;
+        });
       })
     );
     return;
   }
 
-  // Network-First with Cache-Fallback Strategy for the app shell and images
+  // 3. Network-First with Cache-Fallback Strategy for the app shell, manifest, and static images
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Only cache valid static requests from our own origin (exclude code assets we handled above)
+        // Only cache valid static requests from our own origin
         if (response && response.status === 200 && response.type === 'basic') {
-          // Only cache if it is one of our explicit static assets or manifest
-          const shouldCache = ASSETS_TO_CACHE.includes(url.pathname) || url.pathname.endsWith('.jpg') || url.pathname.endsWith('.png');
-          if (shouldCache) {
+          const isStaticAsset = 
+            ASSETS_TO_CACHE.includes(url.pathname) || 
+            url.pathname.endsWith('.jpg') || 
+            url.pathname.endsWith('.png') ||
+            url.pathname.endsWith('.json');
+
+          if (isStaticAsset) {
             const responseToCache = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(event.request, responseToCache);
@@ -86,7 +95,7 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => {
-        // If fetch fails (completely offline), fallback to Cache
+        // If fetch fails (offline or unauthenticated standalone launch), serve from Cache
         return caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
           if (cachedResponse) {
             return cachedResponse;
