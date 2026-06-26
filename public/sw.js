@@ -34,36 +34,42 @@ self.addEventListener('fetch', (event) => {
   // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
-  // Let API and other external connections go straight to network
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/api') || url.pathname.includes('/@vite/') || url.pathname.includes('__vite_ping')) {
+
+  // Let API, Vite dev tools, and external connections go straight to network
+  if (
+    url.pathname.startsWith('/api') || 
+    url.pathname.includes('/@vite/') || 
+    url.pathname.includes('__vite_ping') ||
+    url.origin !== self.location.origin
+  ) {
     return;
   }
 
+  // Network-First with Cache-Fallback Strategy
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(event.request).then((response) => {
-        // Cache successful requests for assets
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
+    fetch(event.request)
+      .then((response) => {
+        // If it's a valid successful response from our origin, cache it and return
+        if (response && response.status === 200) {
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
         }
-
-        const responseToCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
-
         return response;
-      }).catch(() => {
-        // Safe offline fallback for navigation
-        if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
-        }
-      });
-    })
+      })
+      .catch(() => {
+        // If fetch fails (offline or transient error), serve from cache
+        return caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          // If a navigation request fails completely, return cached index.html
+          if (event.request.mode === 'navigate') {
+            return caches.match('/index.html', { ignoreSearch: true });
+          }
+        });
+      })
   );
 });
