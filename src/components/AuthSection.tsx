@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { UserAccount } from '../types';
 import { 
   Key, User, ShieldCheck, Flame, Award, LogOut, Check, ArrowRight, UserPlus, 
-  HelpCircle, Sparkles, Smile, RefreshCw
+  HelpCircle, Sparkles, Smile, RefreshCw, Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { fetchUserRecord, saveUserRecord } from '../lib/firebase';
 
 interface AuthSectionProps {
   currentUser: UserAccount | null;
@@ -29,6 +30,7 @@ export default function AuthSection({ currentUser, onLogin, onLogout, onUpdateUs
   const [name, setName] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const getAccounts = (): Record<string, any> => {
     try {
@@ -43,8 +45,9 @@ export default function AuthSection({ currentUser, onLogin, onLogout, onUpdateUs
     localStorage.setItem('hablasur_registered_accounts', JSON.stringify(accounts));
   };
 
-  const handleAuthSubmit = (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setErrorMsg(null);
 
     const cleanUsername = username.trim().toLowerCase();
@@ -53,98 +56,170 @@ export default function AuthSection({ currentUser, onLogin, onLogout, onUpdateUs
       return;
     }
 
-    const accounts = getAccounts();
+    setLoading(true);
 
-    if (isRegistering) {
-      // Sign up flow
-      if (accounts[cleanUsername]) {
-        setErrorMsg("Este nome de usuário já está sendo utilizado.");
-        return;
-      }
-
-      if (!name.trim()) {
-        setErrorMsg("Por favor, digite seu nome.");
-        return;
-      }
-
-      const newAccount: UserAccount = {
-        username: cleanUsername,
-        name: name.trim(),
-        avatarUrl: selectedAvatar.emoji,
-        xp: 100, // Welcome gift!
-        streak: 1,
-        lastActive: new Date().toISOString().split('T')[0]
-      };
-
-      // Save password and account details
-      accounts[cleanUsername] = {
-        details: newAccount,
-        password: password // simple stored password for learning mock sandbox
-      };
-
-      saveAccounts(accounts);
-      onLogin(newAccount);
-      
-      // Reset
-      setName('');
-      setUsername('');
-      setPassword('');
-    } else {
-      // Login flow
-      const existing = accounts[cleanUsername];
-      if (!existing || existing.password !== password) {
-        setErrorMsg("Nome de usuário ou senha incorretos.");
-        return;
-      }
-
-      // Check / update streak
-      const todayStr = new Date().toISOString().split('T')[0];
-      const details = { ...existing.details };
-      
-      if (details.lastActive) {
-        const lastDate = new Date(details.lastActive);
-        const todayDate = new Date(todayStr);
-        const diffDays = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-
-        if (diffDays === 1) {
-          details.streak += 1;
-        } else if (diffDays > 1) {
-          details.streak = 1; // broken streak
+    try {
+      if (isRegistering) {
+        // Sign up flow
+        if (!name.trim()) {
+          setErrorMsg("Por favor, digite seu nome.");
+          setLoading(false);
+          return;
         }
-      } else {
-        details.streak = 1;
-      }
-      
-      details.lastActive = todayStr;
-      
-      // Save back updated session
-      accounts[cleanUsername].details = details;
-      saveAccounts(accounts);
 
-      onLogin(details);
-      
-      // Reset
-      setUsername('');
-      setPassword('');
+        // Check if user already exists in Firestore
+        const existingRecord = await fetchUserRecord(cleanUsername);
+        if (existingRecord) {
+          setErrorMsg("Este nome de usuário já está sendo utilizado.");
+          setLoading(false);
+          return;
+        }
+
+        const newAccount: UserAccount = {
+          username: cleanUsername,
+          name: name.trim(),
+          avatarUrl: selectedAvatar.emoji,
+          xp: 100, // Welcome gift!
+          streak: 1,
+          lastActive: new Date().toISOString().split('T')[0]
+        };
+
+        // Save password and account details to Cloud Firestore
+        await saveUserRecord(cleanUsername, {
+          details: newAccount,
+          password: password
+        });
+
+        // Save locally as a secondary fallback
+        const accounts = getAccounts();
+        accounts[cleanUsername] = {
+          details: newAccount,
+          password: password
+        };
+        saveAccounts(accounts);
+
+        onLogin(newAccount);
+        
+        // Reset
+        setName('');
+        setUsername('');
+        setPassword('');
+      } else {
+        // Login flow
+        const record = await fetchUserRecord(cleanUsername);
+        
+        if (!record) {
+          // Fallback to local storage cache if completely offline/not found in cloud yet
+          const accounts = getAccounts();
+          const localUser = accounts[cleanUsername];
+          if (localUser && localUser.password === password) {
+            const details = { ...localUser.details };
+            // Try syncing back to cloud in background
+            saveUserRecord(cleanUsername, {
+              details,
+              password
+            }).catch(e => console.error("Background sync failed", e));
+            onLogin(details);
+            setUsername('');
+            setPassword('');
+            setLoading(false);
+            return;
+          }
+
+          setErrorMsg("Nome de usuário ou senha incorretos.");
+          setLoading(false);
+          return;
+        }
+
+        if (record.password !== password) {
+          setErrorMsg("Nome de usuário ou senha incorretos.");
+          setLoading(false);
+          return;
+        }
+
+        // Check / update streak
+        const todayStr = new Date().toISOString().split('T')[0];
+        const details = { ...record.details };
+        
+        if (details.lastActive) {
+          const lastDate = new Date(details.lastActive);
+          const todayDate = new Date(todayStr);
+          const diffDays = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+
+          if (diffDays === 1) {
+            details.streak += 1;
+          } else if (diffDays > 1) {
+            details.streak = 1; // broken streak
+          }
+        } else {
+          details.streak = 1;
+        }
+        
+        details.lastActive = todayStr;
+        
+        // Save back updated session to Firestore
+        await saveUserRecord(cleanUsername, {
+          details,
+          password
+        });
+
+        // Update local cache
+        const accounts = getAccounts();
+        accounts[cleanUsername] = {
+          details,
+          password
+        };
+        saveAccounts(accounts);
+
+        onLogin(details);
+        
+        // Reset
+        setUsername('');
+        setPassword('');
+      }
+    } catch (err: any) {
+      console.error("Auth error", err);
+      setErrorMsg("Erro de conexão ao servidor de banco de dados.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleResetProgress = () => {
-    if (!currentUser) return;
+  const handleResetProgress = async () => {
+    if (!currentUser || loading) return;
     if (confirm("Deseja mesmo resetar seus pontos de experiência e conquistas? Isso não poderá ser desfeito.")) {
-      const updated = {
-        ...currentUser,
-        xp: 100,
-        streak: 1,
-        lastActive: new Date().toISOString().split('T')[0]
-      };
-      
-      const accounts = getAccounts();
-      if (accounts[currentUser.username]) {
-        accounts[currentUser.username].details = updated;
-        saveAccounts(accounts);
+      setLoading(true);
+      try {
+        const updated = {
+          ...currentUser,
+          xp: 100,
+          streak: 1,
+          lastActive: new Date().toISOString().split('T')[0]
+        };
+        
+        // Fetch current password from Firestore to preserve it
+        const record = await fetchUserRecord(currentUser.username);
+        const passwordToUse = record?.password || '123456';
+
+        // Update Cloud Firestore
+        await saveUserRecord(currentUser.username, {
+          details: updated,
+          password: passwordToUse
+        });
+
+        // Update local cache too
+        const accounts = getAccounts();
+        if (accounts[currentUser.username]) {
+          accounts[currentUser.username].details = updated;
+          saveAccounts(accounts);
+        }
+        onUpdateUser(updated);
+      } catch (err) {
+        console.error(err);
+        alert("Erro ao resetar progresso no banco de dados.");
+      } finally {
+        setLoading(false);
       }
-      onUpdateUser(updated);
     }
   };
 
@@ -334,10 +409,17 @@ export default function AuthSection({ currentUser, onLogin, onLogout, onUpdateUs
 
               <button
                 type="submit"
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl transition-all shadow-3xs flex items-center justify-center gap-1"
+                disabled={loading}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl transition-all shadow-3xs flex items-center justify-center gap-1 disabled:opacity-50"
               >
-                <span>{isRegistering ? 'Cadastrar Perfil e Entrar' : 'Entrar na minha Conta'}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                {loading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <>
+                    <span>{isRegistering ? 'Cadastrar Perfil e Entrar' : 'Entrar na minha Conta'}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </>
+                )}
               </button>
 
             </form>

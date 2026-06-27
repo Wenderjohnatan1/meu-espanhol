@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with experience points and streak information.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "Unique username identifier in lowercase" },
+        "name": { "type": "string", "description": "Display name of the user" },
+        "password": { "type": "string", "description": "The password of the user's account" },
+        "avatarUrl": { "type": "string", "description": "Emoji avatar character" },
+        "xp": { "type": "integer", "description": "Experience points accumulated" },
+        "streak": { "type": "integer", "description": "Consecutive days active streak" },
+        "lastActive": { "type": "string", "format": "date", "description": "Last active date (YYYY-MM-DD)" }
+      },
+      "required": ["username", "name", "password", "avatarUrl", "xp", "streak", "lastActive"]
+    },
+    "SRSCard": {
+      "title": "SRSCard",
+      "description": "Spaced repetition flashcard for language learning.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the card" },
+        "spanish": { "type": "string", "description": "The phrase in Spanish" },
+        "translation": { "type": "string", "description": "Portuguese translation" },
+        "explanation": { "type": "string", "description": "Context and slang explanation" },
+        "dialect": { "type": "string", "description": "Sotaque: colombia or mexico" },
+        "intervalMinutes": { "type": "number", "description": "Review interval in minutes" },
+        "easeFactor": { "type": "number", "description": "SM-2 ease factor" },
+        "nextReviewDate": { "type": "string", "format": "date-time", "description": "Next scheduled review ISO timestamp" },
+        "box": { "type": "integer", "description": "Leitner box or difficulty level" },
+        "addedAt": { "type": "string", "format": "date-time", "description": "Date added ISO timestamp" }
+      },
+      "required": ["id", "spanish", "translation", "explanation", "dialect", "intervalMinutes", "easeFactor", "nextReviewDate", "box", "addedAt"]
+    },
+    "UserError": {
+      "title": "UserError",
+      "description": "Grammar or pronunciation error tracked for revision.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the tracked error" },
+        "originalText": { "type": "string", "description": "Original text written or spoken by user" },
+        "correctedText": { "type": "string", "description": "Corrected sentence provided by the system" },
+        "explanation": { "type": "string", "description": "Grammatical/cultural explanation of the fix" },
+        "sourceType": { "type": "string", "description": "Where the error came from (chat or pronuncia)" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the error was tracked" },
+        "reviewed": { "type": "boolean", "description": "Has this been reviewed or solved by user" }
+      },
+      "required": ["id", "originalText", "correctedText", "explanation", "sourceType", "timestamp", "reviewed"]
+    }
+  },
+  "firestore": {
+    "/users/{username}": {
+      "schema": "User",
+      "description": "User profile collection"
+    },
+    "/users/{username}/cards/{cardId}": {
+      "schema": "SRSCard",
+      "description": "Spaced repetition cards collection per user"
+    },
+    "/users/{username}/errors/{errorId}": {
+      "schema": "UserError",
+      "description": "Logged errors per user"
+    }
+  }
+}

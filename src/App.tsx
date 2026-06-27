@@ -13,6 +13,11 @@ import {
   Volume2, Search, X, Brain, User, Award, Flame, BellRing, Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { 
+  fetchUserSrsCards, syncUserSrsCards, 
+  fetchUserErrors, syncUserErrors, saveUserRecord, fetchUserRecord,
+  deleteUserError, clearAllUserErrors
+} from './lib/firebase';
 
 type Tab = 'phrases' | 'stories' | 'memorize' | 'chat' | 'pronounce' | 'errors' | 'profile';
 
@@ -50,44 +55,94 @@ export default function App() {
   const [showNotificationToast, setShowNotificationToast] = useState(false);
   const [lastNotifiedCount, setLastNotifiedCount] = useState(0);
 
-  // Load errors from localStorage on startup
+  // Load errors and cards on startup or when the logged-in user changes
   useEffect(() => {
-    const saved = localStorage.getItem('hablasur_errors');
-    if (saved) {
-      try {
-        setTrackedErrors(JSON.parse(saved));
-      } catch (err) {
-        console.error(err);
+    if (currentUser) {
+      const syncCloudUserData = async () => {
+        try {
+          // Fetch newest profile details from cloud
+          const record = await fetchUserRecord(currentUser.username);
+          if (record && record.details) {
+            setCurrentUser(record.details);
+          }
+
+          // Fetch cards and errors in parallel
+          const [cloudCards, cloudErrors] = await Promise.all([
+            fetchUserSrsCards(currentUser.username),
+            fetchUserErrors(currentUser.username)
+          ]);
+          
+          if (cloudCards && cloudCards.length > 0) {
+            setSrsCards(cloudCards);
+          } else {
+            setSrsCards([]);
+          }
+          if (cloudErrors && cloudErrors.length > 0) {
+            setTrackedErrors(cloudErrors);
+          } else {
+            setTrackedErrors([]);
+          }
+        } catch (err) {
+          console.error("Failed to fetch cloud user details:", err);
+        }
+      };
+
+      syncCloudUserData();
+    } else {
+      // Offline/local backup fallback for logged-out guests
+      const savedErrors = localStorage.getItem('hablasur_errors');
+      if (savedErrors) {
+        try {
+          setTrackedErrors(JSON.parse(savedErrors));
+        } catch (err) {
+          console.error(err);
+        }
+      } else {
+        setTrackedErrors([]);
+      }
+      const savedCards = localStorage.getItem('hablasur_srs_cards');
+      if (savedCards) {
+        try {
+          setSrsCards(JSON.parse(savedCards));
+        } catch (err) {
+          console.error(err);
+        }
+      } else {
+        setSrsCards([]);
       }
     }
-  }, []);
+  }, [currentUser?.username]);
 
-  // Sync user profile changes to local storage
+  // Sync user profile changes to Cloud Firestore and local storage
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('hablasur_logged_in_user', JSON.stringify(currentUser));
-      // Update inside accounts pool too
-      try {
-        const pooledStr = localStorage.getItem('hablasur_registered_accounts');
-        if (pooledStr) {
-          const pool = JSON.parse(pooledStr);
-          if (pool[currentUser.username]) {
-            pool[currentUser.username].details = currentUser;
-            localStorage.setItem('hablasur_registered_accounts', JSON.stringify(pool));
-          }
+      // Save details to Firestore
+      const syncProfile = async () => {
+        try {
+          const record = await fetchUserRecord(currentUser.username);
+          const passwordToUse = record?.password || '123456';
+          await saveUserRecord(currentUser.username, {
+            details: currentUser,
+            password: passwordToUse
+          });
+        } catch (err) {
+          console.error("Firestore sync profile error:", err);
         }
-      } catch (err) {
-        console.error("Pool sync failed", err);
-      }
+      };
+      syncProfile();
     } else {
       localStorage.removeItem('hablasur_logged_in_user');
     }
   }, [currentUser]);
 
-  // Sync SRS deck to local storage
+  // Sync SRS deck to Cloud Firestore and local storage
   useEffect(() => {
     localStorage.setItem('hablasur_srs_cards', JSON.stringify(srsCards));
-  }, [srsCards]);
+    if (currentUser && srsCards.length > 0) {
+      syncUserSrsCards(currentUser.username, srsCards);
+    }
+  }, [srsCards, currentUser?.username]);
 
   // Real-time Timer to check for due spaced repetition cards and raise notifications
   useEffect(() => {
@@ -124,10 +179,13 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [srsCards, activeDialect, lastNotifiedCount]);
 
-  // Sync errors to localStorage
+  // Sync errors to localStorage and Cloud Firestore
   const saveErrors = (updated: UserError[]) => {
     setTrackedErrors(updated);
     localStorage.setItem('hablasur_errors', JSON.stringify(updated));
+    if (currentUser && updated.length > 0) {
+      syncUserErrors(currentUser.username, updated);
+    }
   };
 
   // Add error to log (tracked across Chat, Story Quiz, and Pronunciation)
@@ -159,10 +217,16 @@ export default function App() {
   const handleClearError = (id: string) => {
     const updated = trackedErrors.filter((e) => e.id !== id);
     saveErrors(updated);
+    if (currentUser) {
+      deleteUserError(currentUser.username, id);
+    }
   };
 
   const handleClearAllErrors = () => {
     saveErrors([]);
+    if (currentUser) {
+      clearAllUserErrors(currentUser.username, trackedErrors);
+    }
   };
 
   const handleRecordError = (errorMsg: string) => {
