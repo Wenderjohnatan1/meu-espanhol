@@ -158,13 +158,17 @@ export default function App() {
         setLastNotifiedCount(dueCount);
 
         // Try standard web push native notification if granted
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification("⏰ Hora de memorizar!", {
-            body: `Você tem ${dueCount} expressões prontas para revisão no sotaque ${
-              activeDialect === 'colombia' ? 'colombiano' : 'mexicano'
-            }!`,
-            icon: '/favicon.ico'
-          });
+        try {
+          if ('Notification' in window && window.Notification && Notification.permission === 'granted') {
+            new Notification("⏰ Hora de memorizar!", {
+              body: `Você tem ${dueCount} expressões prontas para revisão no sotaque ${
+                activeDialect === 'colombia' ? 'colombiano' : 'mexicano'
+              }!`,
+              icon: '/favicon.ico'
+            });
+          }
+        } catch (e) {
+          console.warn("Notification API check blocked or failed in this iframe context:", e);
         }
       } else if (dueCount === 0) {
         setShowNotificationToast(false);

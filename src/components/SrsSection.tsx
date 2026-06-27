@@ -38,9 +38,16 @@ export default function SrsSection({
   const [frontMode, setFrontMode] = useState<'spanish' | 'translation'>('translation'); // Portuguese first by default, like real flashcards!
 
   // Notification states
-  const [notificationPermission, setNotificationPermission] = useState<string>(
-    'Notification' in window ? Notification.permission : 'unsupported'
-  );
+  const [notificationPermission, setNotificationPermission] = useState<string>(() => {
+    try {
+      if ('Notification' in window && window.Notification) {
+        return Notification.permission;
+      }
+    } catch (e) {
+      console.warn("Notification permission check failed or blocked in iframe:", e);
+    }
+    return 'unsupported';
+  });
 
   // Filter cards by active dialect
   const filteredCards = srsCards.filter(c => c.dialect === activeDialect);
@@ -69,19 +76,31 @@ export default function SrsSection({
 
   // Request native notifications
   const handleRequestNotificationPermission = () => {
-    if (!('Notification' in window)) {
-      alert("Este navegador não suporta notificações de área de trabalho.");
-      return;
-    }
-
-    Notification.requestPermission().then((permission) => {
-      setNotificationPermission(permission);
-      if (permission === 'granted') {
-        new Notification("🔔 Notificações Ativadas!", {
-          body: "Ótimo! Enviaremos lembretes assim que suas frases estiverem prontas para memorização.",
-        });
+    try {
+      if (!('Notification' in window) || !window.Notification) {
+        alert("Este navegador não suporta notificações de área de trabalho.");
+        return;
       }
-    });
+
+      Notification.requestPermission().then((permission) => {
+        setNotificationPermission(permission);
+        if (permission === 'granted') {
+          try {
+            new Notification("🔔 Notificações Ativadas!", {
+              body: "Ótimo! Enviaremos lembretes assim que suas frases estiverem prontas para memorização.",
+            });
+          } catch (err) {
+            console.warn("Creating Notification failed (blocked in iframe):", err);
+          }
+        }
+      }).catch((err) => {
+        console.warn("Requesting notification permission rejected:", err);
+        alert("Permissão de notificação bloqueada pelo navegador.");
+      });
+    } catch (e) {
+      console.error("Failed to request notification permission:", e);
+      alert("Não foi possível solicitar notificações neste navegador/ambiente.");
+    }
   };
 
   // Add custom manual card
