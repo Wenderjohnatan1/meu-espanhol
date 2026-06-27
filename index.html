@@ -7,6 +7,59 @@
     <meta name="theme-color" content="#4f46e5" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/icon-512.jpg" />
+    <script>
+      // Self-healing / Auto-recovery script for PWAs & Cache issues
+      window.addEventListener('error', function(e) {
+        if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
+          console.error('Resource load failed, triggering PWA reset...', e.target.src || e.target.href);
+          triggerReset();
+        }
+      }, true);
+
+      window.addEventListener('unhandledrejection', function(e) {
+        if (e.reason && (e.reason.message && e.reason.message.indexOf('dynamically imported module') !== -1 || e.reason.name === 'ChunkLoadError')) {
+          console.error('Chunk load error, triggering PWA reset...', e.reason);
+          triggerReset();
+        }
+      });
+
+      // If after 4.5 seconds the React app hasn't mounted anything inside #root, reset
+      setTimeout(function() {
+        var rootEl = document.getElementById('root');
+        if (rootEl && rootEl.innerHTML === '') {
+          console.warn('React app did not mount within 4.5s. Resetting caches and reloading...');
+          triggerReset();
+        }
+      }, 4500);
+
+      function triggerReset() {
+        if (window.navigator && navigator.serviceWorker) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            for (var i = 0; i < regs.length; i++) {
+              regs[i].unregister();
+            }
+            if (window.caches) {
+              caches.keys().then(function(keys) {
+                Promise.all(keys.map(function(key) { return caches.delete(key); })).then(function() {
+                  // Clear service worker caches and local state to fix the blank screen
+                  localStorage.removeItem('pwa_cleanup_v4');
+                  localStorage.removeItem('pwa_cleanup_v5');
+                  window.location.href = window.location.origin + '?r=' + Date.now();
+                });
+              });
+            } else {
+              localStorage.removeItem('pwa_cleanup_v4');
+              localStorage.removeItem('pwa_cleanup_v5');
+              window.location.href = window.location.origin + '?r=' + Date.now();
+            }
+          }).catch(function() {
+            window.location.href = window.location.origin + '?r=' + Date.now();
+          });
+        } else {
+          window.location.href = window.location.origin + '?r=' + Date.now();
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

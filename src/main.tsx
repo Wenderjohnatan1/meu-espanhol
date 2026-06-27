@@ -5,7 +5,7 @@ import './index.css';
 
 // Register PWA Service Worker with recovery cleanup
 if ('serviceWorker' in navigator) {
-  const CLEANUP_KEY = 'pwa_cleanup_v4';
+  const CLEANUP_KEY = 'pwa_cleanup_v5';
   if (!localStorage.getItem(CLEANUP_KEY)) {
     // Force clear all old service workers and caches to recover from white-screen bugs
     navigator.serviceWorker.getRegistrations().then((registrations) => {
